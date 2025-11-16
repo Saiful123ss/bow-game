@@ -1,0 +1,259 @@
+<!-- Updated Arrow Game for Mobile View -->
+<!-- Full responsive version with touch support and mobile-friendly layout -->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Arrow Game (Mobile Ready)</title>
+
+    <!-- GSAP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/1.19.1/TweenMax.min.js"></script>
+    <script src="//s3-us-west-2.amazonaws.com/s.cdpn.io/16327/MorphSVGPlugin.min.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        background: #222;
+        overflow: hidden;
+        touch-action: none; /* Disable double-tap zoom and defaults */
+      }
+      svg {
+        width: 100vw;
+        height: 100vh;
+        position: fixed;
+        top: 0;
+        left: 0;
+      }
+      span {
+        position: fixed;
+        bottom: 15px;
+        width: 100%;
+        text-align: center;
+        color: white;
+        opacity: 0.4;
+        font-family: sans-serif;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <svg id="game" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 400" overflow="visible">
+      <!-- SVG CONTENT EXACT SAME as your original (omitted here for readability) -->
+      <!-- PLEASE PASTE YOUR ORIGINAL SVG CONTENT HERE -->
+    </svg>
+
+    <span>Tap, hold, drag, and release to shoot!</span>
+
+    <script>
+      /**************************************
+       * MOBILE + DESKTOP INPUT HANDLING
+       **************************************/
+
+      const svg = document.querySelector("svg");
+      const cursor = svg.createSVGPoint();
+      const arrows = document.querySelector(".arrows");
+      let randomAngle = 0;
+
+      let isDown = false;
+
+      // FIXED TARGET (same as original)
+      const target = { x: 900, y: 249.5 };
+      const lineSegment = { x1: 875, y1: 280, x2: 925, y2: 220 };
+      const pivot = { x: 100, y: 250 };
+
+      aim({ clientX: 320, clientY: 300 });
+
+      // DESKTOP
+      window.addEventListener("mousedown", startDraw);
+      window.addEventListener("mousemove", dragAim);
+      window.addEventListener("mouseup", releaseArrow);
+
+      // MOBILE
+      window.addEventListener("touchstart", (e) => startDraw(e.touches[0]));
+      window.addEventListener("touchmove", (e) => {
+        dragAim(e.touches[0]);
+      });
+      window.addEventListener("touchend", releaseArrow);
+
+      function startDraw(e) {
+        isDown = true;
+        randomAngle = Math.random() * Math.PI * 0.03 - 0.015;
+        TweenMax.to(".arrow-angle use", 0.3, { opacity: 1 });
+        aim(e);
+      }
+
+      function dragAim(e) {
+        if (!isDown) return;
+        aim(e);
+      }
+
+      function releaseArrow() {
+        if (!isDown) return;
+        isDown = false;
+        loose();
+      }
+
+      /**************************************
+       * ORIGINAL GAME FUNCTIONS BELOW
+       **************************************/
+
+      function aim(e) {
+        const point = getMouseSVG(e);
+        point.x = Math.min(point.x, pivot.x - 7);
+        point.y = Math.max(point.y, pivot.y + 7);
+
+        const dx = point.x - pivot.x;
+        const dy = point.y - pivot.y;
+        const angle = Math.atan2(dy, dx) + randomAngle;
+        const bowAngle = angle - Math.PI;
+        const distance = Math.min(Math.sqrt(dx * dx + dy * dy), 50);
+        const scale = Math.min(Math.max(distance / 30, 1), 2);
+
+        TweenMax.to("#bow", 0.2, {
+          scaleX: scale,
+          rotation: bowAngle + "rad",
+          transformOrigin: "right center",
+        });
+
+        TweenMax.to(".arrow-angle", 0.2, {
+          rotation: bowAngle + "rad",
+          svgOrigin: "100 250",
+        });
+
+        TweenMax.to(".arrow-angle use", 0.2, {
+          x: -distance,
+        });
+
+        const radius = distance * 9;
+        const offset = {
+          x: Math.cos(bowAngle) * radius,
+          y: Math.sin(bowAngle) * radius,
+        };
+
+        const arcWidth = offset.x * 3;
+
+        TweenMax.to("#arc", 0.2, {
+          attr: {
+            d:
+              "M100,250c" +
+              offset.x +
+              "," +
+              offset.y +
+              "," +
+              (arcWidth - offset.x) +
+              "," +
+              (offset.y + 50) +
+              "," +
+              arcWidth +
+              ",50",
+          },
+          autoAlpha: distance / 60,
+        });
+      }
+
+      function loose() {
+        TweenMax.to("#bow", 0.4, {
+          scaleX: 1,
+          transformOrigin: "right center",
+          ease: Elastic.easeOut,
+        });
+
+        const newArrow = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        newArrow.setAttributeNS("http://www.w3.org/1999/xlink", "href", "#arrow");
+        arrows.appendChild(newArrow);
+
+        const path = MorphSVGPlugin.pathDataToBezier("#arc");
+
+        TweenMax.to(newArrow, 0.5, {
+          bezier: {
+            type: "cubic",
+            values: path,
+            autoRotate: ["x", "y", "rotation"],
+          },
+          onUpdate: hitTest,
+          onUpdateParams: ["{self}"],
+          onComplete: onMiss,
+          ease: Linear.easeNone,
+        });
+
+        TweenMax.set(".arrow-angle use", { opacity: 0 });
+        TweenMax.to("#arc", 0.3, { opacity: 0 });
+      }
+
+      function hitTest(tween) {
+        const arrow = tween.target[0];
+        const t = arrow._gsTransform;
+        const rad = (t.rotation * Math.PI) / 180;
+
+        const segment = {
+          x1: t.x,
+          y1: t.y,
+          x2: Math.cos(rad) * 60 + t.x,
+          y2: Math.sin(rad) * 60 + t.y,
+        };
+
+        const hit = getIntersection(segment, lineSegment);
+
+        if (hit.segment1 && hit.segment2) {
+          tween.pause();
+          const dx = hit.x - target.x;
+          const dy = hit.y - target.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          showMessage(dist < 7 ? ".loveyou" : ".hit");
+        }
+      }
+
+      function onMiss() {
+        showMessage(".missyou");
+      }
+
+      function getMouseSVG(e) {
+        cursor.x = e.clientX;
+        cursor.y = e.clientY;
+        return cursor.matrixTransform(svg.getScreenCTM().inverse());
+      }
+
+      function getIntersection(a, b) {
+        const dx1 = a.x2 - a.x1;
+        const dy1 = a.y2 - a.y1;
+        const dx2 = b.x2 - b.x1;
+        const dy2 = b.y2 - b.y1;
+        const cx = a.x1 - b.x1;
+        const cy = a.y1 - b.y1;
+        const div = dy2 * dx1 - dx2 * dy1;
+        if (div === 0) return {};
+        const ua = (dx2 * cy - dy2 * cx) / div;
+        const ub = (dx1 * cy - dy1 * cx) / div;
+        return {
+          x: a.x1 + ua * dx1,
+          y: a.y1 + ua * dy1,
+          segment1: ua >= 0 && ua <= 1,
+          segment2: ub >= 0 && ub <= 1,
+        };
+      }
+
+      function showMessage(selector) {
+        TweenMax.killTweensOf(selector);
+        TweenMax.set(selector, { autoAlpha: 1 });
+
+        TweenMax.staggerFromTo(
+          selector + " path",
+          0.4,
+          { scale: 0, rotation: -10, transformOrigin: "center" },
+          { scale: 1, ease: Back.easeOut },
+          0.04
+        );
+
+        TweenMax.staggerTo(
+          selector + " path",
+          0.3,
+          { delay: 1.3, scale: 0, rotation: 20, ease: Back.easeIn },
+          0.02
+        );
+      }
+    </script>
+  </body>
+</html>
